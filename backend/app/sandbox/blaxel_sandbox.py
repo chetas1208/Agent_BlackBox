@@ -33,7 +33,7 @@ class BlaxelSandbox(SandboxAdapter):
             "name": sandbox_id,
             "image": "blaxel/py-app:latest",
             "memory": 2048,
-            "region": "us-east-1",
+            "region": "us-was-1",
             "ttl": "4h",
         })
         self._instances[sandbox_id] = sandbox

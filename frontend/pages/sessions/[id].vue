@@ -222,6 +222,33 @@
           </div>
         </div>
 
+        <!-- Report -->
+        <div v-if="activeTab === 'report'">
+          <div v-if="reportLoading" class="card p-8 text-center">
+            <div class="w-6 h-6 border-2 border-accent-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p class="text-surface-400 text-sm">Loading report...</p>
+          </div>
+          <div v-else-if="!reportData?.report" class="card p-8 text-center text-surface-500">
+            <div class="text-4xl mb-3">📋</div>
+            <p class="font-medium mb-1">No report yet</p>
+            <p class="text-sm text-surface-600">The agent generates a report when it calls <code class="text-accent-400">generate_report</code> before completing the task.</p>
+            <p v-if="session.status === 'running'" class="text-xs text-surface-600 mt-2">Session is still running — check back soon.</p>
+          </div>
+          <div v-else>
+            <!-- Report header -->
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-2">
+                <span class="text-green-400 text-sm font-medium">✓ Report Ready</span>
+                <span v-if="reportData.source" class="badge badge-neutral border text-xs">{{ reportData.source }}</span>
+                <span v-if="reportData.generated_at" class="text-surface-600 text-xs">{{ reportData.generated_at }}</span>
+              </div>
+              <button class="btn-secondary text-xs" @click="downloadReport">Download .md</button>
+            </div>
+            <!-- Rendered markdown -->
+            <div class="card p-6 prose-report" v-html="renderedReport" />
+          </div>
+        </div>
+
         <!-- JSON -->
         <div v-if="activeTab === 'json'">
           <div class="card p-4">
@@ -352,6 +379,8 @@ const checkpoints = ref<Checkpoint[]>([])
 const alerts = ref<SafetyAlert[]>([])
 const sandboxFiles = ref<SandboxFile[]>([])
 const recoveryReport = ref<any>(null)
+const reportData = ref<{ report: string | null; source: string | null; generated_at: string } | null>(null)
+const reportLoading = ref(false)
 const memoryFilter = ref('')
 
 const activeTab = ref('timeline')
@@ -360,6 +389,7 @@ const { events, isStreaming } = useEventStream(sessionId)
 
 const tabs = computed(() => [
   { id: 'timeline', label: 'Timeline', count: events.value.length },
+  { id: 'report', label: reportData.value?.report ? '📋 Report ✓' : '📋 Report' },
   { id: 'memory', label: 'Memory', count: memory.value.length },
   { id: 'checkpoints', label: 'Checkpoints', count: checkpoints.value.length },
   { id: 'sandbox', label: 'Sandbox' },
@@ -380,6 +410,50 @@ const filteredMemory = computed(() => {
   if (!memoryFilter.value) return memory.value
   return memory.value.filter(m => m.layer === memoryFilter.value)
 })
+
+// Simple markdown → HTML renderer (no external lib needed)
+function renderMarkdown(md: string): string {
+  return md
+    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold text-white mt-5 mb-2">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold text-white mt-6 mb-3 border-b border-surface-700 pb-2">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold text-accent-400 mb-1">$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-surface-200">$1</strong>')
+    .replace(/`([^`]+)`/g, '<code class="bg-surface-800 text-accent-400 px-1.5 py-0.5 rounded text-xs font-mono">$1</code>')
+    .replace(/^```[\s\S]*?^```/gm, (block) => {
+      const code = block.replace(/^```[^\n]*\n/, '').replace(/```$/, '')
+      return `<pre class="bg-surface-950 rounded-lg p-3 text-xs font-mono text-surface-400 overflow-x-auto my-3">${code}</pre>`
+    })
+    .replace(/^---$/gm, '<hr class="border-surface-700 my-4">')
+    .replace(/^- (.+)$/gm, '<li class="text-surface-300 text-sm ml-4 list-disc">$1</li>')
+    .replace(/^(\d+\.) (.+)$/gm, '<li class="text-surface-300 text-sm ml-4 list-decimal">$2</li>')
+    .replace(/^(?!<[h1-6|li|hr|pre])(.+)$/gm, '<p class="text-surface-300 text-sm mb-2">$1</p>')
+    .replace(/<\/li>\n<li/g, '</li><li')
+}
+
+const renderedReport = computed(() => {
+  if (!reportData.value?.report) return ''
+  return renderMarkdown(reportData.value.report)
+})
+
+async function loadReport() {
+  reportLoading.value = true
+  try {
+    reportData.value = await api.getReport(sessionId.value)
+  } catch { /* empty */ } finally {
+    reportLoading.value = false
+  }
+}
+
+function downloadReport() {
+  if (!reportData.value?.report) return
+  const blob = new Blob([reportData.value.report], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `agent-report-${sessionId.value.slice(0, 8)}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 async function loadSession() {
   try {
@@ -436,11 +510,13 @@ async function doRestore(checkpointId: string) {
 onMounted(() => {
   loadSession()
   loadSideData()
+  loadReport()
 })
 
 watch(activeTab, (tab) => {
   if (tab === 'sandbox') loadSandbox()
   if (tab === 'recovery') loadRecovery()
+  if (tab === 'report') loadReport()
 })
 
 useIntervalFn(async () => {

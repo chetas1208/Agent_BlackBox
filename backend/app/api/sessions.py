@@ -220,6 +220,41 @@ async def sandbox_files(session_id: str):
     return [f.model_dump() for f in files]
 
 
+@router.get("/{session_id}/report")
+async def get_agent_report(session_id: str):
+    """Return the agent's AGENT_REPORT.md — first from memory (always available),
+    then falling back to reading it live from the sandbox."""
+    session_svc = await get_session_svc()
+    session = await session_svc.get(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    # Try memory first (persisted even after sandbox is gone)
+    mem_svc = await get_memory_svc()
+    from app.models.memory import MemoryLayer
+    report_mem = await mem_svc.get_by_key(session_id, MemoryLayer.SEMANTIC, "agent_report")
+    if report_mem and report_mem.value:
+        report = report_mem.value.get("report", "")
+        if report:
+            return {
+                "report": report,
+                "source": "memory",
+                "generated_at": report_mem.value.get("generated_at", ""),
+            }
+
+    # Fall back to reading from live sandbox
+    if session.sandbox_id:
+        try:
+            svc = await get_sandbox_svc()
+            content = await svc.read_file(session.sandbox_id, "AGENT_REPORT.md")
+            if content:
+                return {"report": content, "source": "sandbox", "generated_at": ""}
+        except Exception:
+            pass
+
+    return {"report": None, "source": None, "generated_at": None}
+
+
 # ─── Safety Alerts ─────────────────────────────────────────────
 
 @router.get("/{session_id}/alerts")

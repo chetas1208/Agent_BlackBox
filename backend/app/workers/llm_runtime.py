@@ -141,6 +141,32 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "generate_report",
+            "description": (
+                "Write a comprehensive markdown analysis report to /workspace/AGENT_REPORT.md. "
+                "ALWAYS call this before task_complete. Include: repo structure, languages/frameworks detected, "
+                "issues found, test results, what was fixed, what couldn't be done, and recommendations."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "repo_name": {"type": "string", "description": "Repository name"},
+                    "summary": {"type": "string", "description": "One-paragraph executive summary"},
+                    "structure": {"type": "string", "description": "Repo structure overview (key files/dirs)"},
+                    "languages": {"type": "string", "description": "Languages and frameworks detected"},
+                    "issues_found": {"type": "string", "description": "List of issues, bugs, or code quality problems found"},
+                    "actions_taken": {"type": "string", "description": "What the agent actually did"},
+                    "test_results": {"type": "string", "description": "Test run output and results"},
+                    "recommendations": {"type": "string", "description": "Actionable next steps for the developer"},
+                    "limitations": {"type": "string", "description": "What couldn't be done in this sandbox and why"},
+                },
+                "required": ["repo_name", "summary", "issues_found", "actions_taken", "recommendations"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "task_complete",
             "description": "Signal that the task is fully complete. Call this when done.",
             "parameters": {
@@ -270,32 +296,48 @@ class LLMAgentRuntime:
         return True
 
     async def _compress_context(self, messages: list[dict], session_id: str) -> list[dict]:
-        """Summarise old messages to keep context window small."""
-        if len(messages) <= 12:
+        """Summarise old messages to keep context window small.
+
+        IMPORTANT: OpenAI requires that every `tool` role message is immediately
+        preceded (somewhere) by an `assistant` message that contains `tool_calls`.
+        To stay safe we keep the last full assistant+tool round-trip intact and
+        only summarise everything before it.
+        """
+        if len(messages) <= 14:
             return messages
 
         system_msg = messages[0]
-        to_summarise = messages[1:-6]  # keep system + last 6
-        recent = messages[-6:]
+
+        # Walk backwards to find the last clean assistant boundary
+        # (an assistant message WITHOUT tool_calls, or the start of a tool group)
+        cut = len(messages) - 8  # keep last 8 messages
+        # Make sure we never cut in the middle of an assistant/tool pair
+        while cut > 1 and messages[cut].get("role") == "tool":
+            cut -= 1
+        if cut <= 1:
+            return messages  # not enough to compress safely
+
+        to_summarise = messages[1:cut]
+        recent = messages[cut:]
 
         history_text = "\n".join([
-            f"{m.get('role','?').upper()}: {str(m.get('content',''))[:300]}"
+            f"{m.get('role','?').upper()}: {str(m.get('content') or '')[:200]}"
             for m in to_summarise
-            if isinstance(m.get('content'), str)
+            if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)
         ])
 
         try:
             resp = await self.client.chat.completions.create(
                 model=self.settings.openai_model,
                 messages=[
-                    {"role": "system", "content": "Summarise this agent conversation history in 3-5 bullet points. Focus on: what was found, what was changed, current state."},
-                    {"role": "user", "content": history_text[:6000]},
+                    {"role": "system", "content": "Summarise this AI agent's work history in 4-6 bullet points. Focus on: what files were explored, what commands were run, what was found, current progress."},
+                    {"role": "user", "content": history_text[:5000] or "No textual history available."},
                 ],
                 max_tokens=400,
             )
             summary = resp.choices[0].message.content or "Prior steps executed."
         except Exception:
-            summary = f"Prior {len(to_summarise)} steps executed."
+            summary = f"Completed {len(to_summarise)} prior steps."
 
         await self._emit(session_id, EventType.AGENT_STEP,
                          "Context compressed for efficiency",
@@ -304,7 +346,7 @@ class LLMAgentRuntime:
 
         return [
             system_msg,
-            {"role": "assistant", "content": f"[Context Summary]\n{summary}"},
+            {"role": "user", "content": f"[Prior work summary]\n{summary}\n\nContinue the task."},
             *recent,
         ]
 
@@ -432,6 +474,9 @@ class LLMAgentRuntime:
                              "Listed files", payload={"files": files[:500]})
             return files
 
+        elif tool_name == "generate_report":
+            return await self._generate_report(session, args)
+
         elif tool_name == "create_pr":
             return await self._create_pr(session, args)
 
@@ -439,6 +484,88 @@ class LLMAgentRuntime:
             return "__DONE__"
 
         return f"Unknown tool: {tool_name}"
+
+    async def _generate_report(self, session: Session, args: dict) -> str:
+        """Write AGENT_REPORT.md to /workspace and save it in memory."""
+        repo_name = args.get("repo_name", session.repo_url or "Unknown Repo")
+        summary = args.get("summary", "")
+        structure = args.get("structure", "")
+        languages = args.get("languages", "")
+        issues = args.get("issues_found", "")
+        actions = args.get("actions_taken", "")
+        test_results = args.get("test_results", "")
+        recommendations = args.get("recommendations", "")
+        limitations = args.get("limitations", "")
+
+        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+        report_md = f"""# Agent Analysis Report
+**Repository:** {repo_name}
+**Session:** {session.id[:8]}
+**Generated:** {now}
+**Task:** {session.goal or session.title}
+
+---
+
+## Executive Summary
+{summary}
+
+---
+
+## Repository Structure
+```
+{structure}
+```
+
+## Languages & Frameworks
+{languages}
+
+---
+
+## Issues Found
+{issues}
+
+---
+
+## Actions Taken
+{actions}
+
+---
+
+## Test Results
+{test_results if test_results else "_No tests were run._"}
+
+---
+
+## Recommendations
+{recommendations}
+
+---
+
+## Sandbox Limitations
+{limitations if limitations else "_None — all required tools were available._"}
+
+---
+*Report generated by Agent Black Box — AI-powered code analysis*
+"""
+
+        try:
+            await self.sandbox_svc.write_file(session.sandbox_id, "AGENT_REPORT.md", report_md)
+        except Exception as e:
+            return f"Report generated but could not save to sandbox: {e}"
+
+        # Save report to memory so it's accessible even after sandbox is gone
+        await self._write_memory(session, MemoryLayer.SEMANTIC,
+                                  "agent_report",
+                                  {"report": report_md, "generated_at": now},
+                                  confidence=1.0, tags=["report", "output"])
+
+        await self._emit(session.id, EventType.AGENT_STEP,
+                         "Report generated: AGENT_REPORT.md",
+                         EventActor.AGENT,
+                         payload={"report_size": len(report_md), "path": "/workspace/AGENT_REPORT.md"})
+
+        return f"Report written to /workspace/AGENT_REPORT.md ({len(report_md)} chars)"
 
     async def _create_pr(self, session: Session, args: dict) -> str:
         """Create a GitHub PR with all changes made in the sandbox."""
@@ -572,14 +699,23 @@ Working directory: /workspace
 {readme_section}
 {ltm_section}
 
-Guidelines:
-- Use run_command for shell commands (pytest, pip, git, grep, find, etc.)
-- Use read_file / write_file for file operations
-- Use list_files to explore structure
-- After fixing, always verify with tests
-- When done, use create_pr to deliver your changes as a GitHub PR
-- Then call task_complete with a clear summary
-- Be systematic: explore → understand → plan → fix → verify → PR
+## Workflow (ALWAYS follow this order):
+1. **Explore** — list_files, read key files (README, requirements, package.json, etc.)
+2. **Analyse** — understand structure, languages, frameworks, dependencies
+3. **Execute the task** — run commands, read/write files, run tests
+4. **Generate Report** — call generate_report with a FULL analysis of everything found
+   - Even if commands failed, report what you discovered about the codebase
+   - Note what the sandbox supports vs what needs Docker/K8s/cloud
+5. **Create PR** — if you made code changes, call create_pr
+6. **Complete** — call task_complete with a one-line summary
+
+## Rules:
+- ALWAYS call generate_report before task_complete — no exceptions
+- If something fails (e.g. Docker not available), document it in the report limitations section
+- Be honest: if the sandbox can't do something (Docker, K8s, cloud deploys), say so
+- Static analysis tools available: grep, find, wc, git log, python -m py_compile, flake8 (install if needed)
+- You CAN: run Python/Node/Go/tests, install packages, edit files, run git commands
+- You CANNOT: run Docker, Kubernetes, start databases, access external services
 """
 
         messages: list[dict] = [
@@ -617,9 +753,12 @@ Guidelines:
                     tool_choice="auto",
                 )
             except Exception as exc:
+                err_msg = str(exc)[:300]
                 await self._emit(session.id, EventType.FAILURE_DETECTED,
-                                 f"LLM call failed: {exc}", EventActor.RUNTIME,
+                                 f"LLM call failed: {err_msg}", EventActor.RUNTIME,
                                  severity=EventSeverity.ERROR)
+                if not final_summary:
+                    final_summary = f"Agent stopped at step {step_count}: {err_msg}"
                 break
 
             msg = response.choices[0].message

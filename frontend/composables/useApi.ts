@@ -63,6 +63,7 @@ export function useApi() {
     // Sandbox
     getSandbox: (sessionId: string) => request<{ sandbox_id: string; files: SandboxFile[] }>(`/api/sessions/${sessionId}/sandbox`),
     getSandboxFiles: (sessionId: string) => request<SandboxFile[]>(`/api/sessions/${sessionId}/sandbox/files`),
+    getReport: (sessionId: string) => request<{ report: string | null; source: string | null; generated_at: string }>(`/api/sessions/${sessionId}/report`),
 
     // Seed
     seedAll: () => request<any>('/api/seed', { method: 'POST' }),

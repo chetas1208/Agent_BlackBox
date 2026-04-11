@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from app.models.session import Session, SessionStatus, SessionStage
+from app.models.session import Session, SessionStatus, SessionStage, ExecutionPhase, ProviderStatus
 from app.models.event import EventType, EventActor, EventSeverity
 from app.models.checkpoint import Checkpoint
 from app.services.event_service import EventRecorderService
@@ -34,6 +34,8 @@ class RecoveryService:
 
         session.status = SessionStatus.RUNNING
         session.stage = SessionStage.RECOVERING
+        session.execution_phase = ExecutionPhase.RECOVERING
+        session.provider_status = ProviderStatus.RUNNING
         await self.session_svc.update(session)
 
         await self.event_svc.emit(
@@ -69,13 +71,14 @@ class RecoveryService:
         )
 
         if cp.sandbox_snapshot_ref and session.sandbox_id:
-            await self.sandbox_svc.restore(session.sandbox_id, cp.sandbox_snapshot_ref)
+            await self.sandbox_svc.restore(session.sandbox_id, cp.sandbox_snapshot_ref, session.sandbox_profile)
 
         session.current_plan = cp.plan_snapshot
         session.last_checkpoint_id = cp.id
         session.risk_score = max(0, session.risk_score - 0.2)
         session.confidence_score = min(1.0, cp.confidence_at + 0.1)
         session.stage = SessionStage.EXECUTING
+        session.execution_phase = ExecutionPhase.EXECUTING
         await self.session_svc.update(session)
 
         await self.event_svc.emit(

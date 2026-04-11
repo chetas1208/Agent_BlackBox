@@ -3,10 +3,11 @@ from fastapi import APIRouter, HTTPException, Query
 from app.api.deps import (
     get_session_svc, get_event_svc, get_checkpoint_svc,
     get_memory_svc, get_recovery_svc, get_agent_runtime,
-    get_sandbox_svc,
+    get_sandbox_svc, get_artifact_svc, get_real_execution_orchestrator,
+    get_approval_svc, get_branch_svc, get_postmortem_svc, get_safety_svc,
 )
 from app.schemas.session import CreateSessionRequest
-from app.models.session import Session
+from app.models.session import Session, ExecutionMode
 from app.workers.agent_runtime import start_agent_task, cancel_agent_task
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -14,6 +15,11 @@ router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
 @router.post("", response_model=Session)
 async def create_session(req: CreateSessionRequest):
+    if req.execution_mode == ExecutionMode.REAL:
+        orchestrator = await get_real_execution_orchestrator()
+        errors = orchestrator.validate_create_request(req.execution_mode, req.repo_url)
+        if errors:
+            raise HTTPException(400, "; ".join(errors))
     svc = await get_session_svc()
     return await svc.create(req)
 
@@ -45,9 +51,19 @@ async def start_session(session_id: str, scenario: str = Query("healthy")):
     session = await svc.start(session_id)
     if not session:
         raise HTTPException(404, "Session not found")
+    if session.execution_mode == ExecutionMode.REAL:
+        orchestrator = await get_real_execution_orchestrator()
+        errors = orchestrator.validate_create_request(session.execution_mode, session.repo_url)
+        if errors:
+            raise HTTPException(400, "; ".join(errors))
     runtime = await get_agent_runtime()
     start_agent_task(runtime, session, scenario)
-    return {"status": "started", "session_id": session_id, "scenario": scenario}
+    return {
+        "status": "started",
+        "session_id": session_id,
+        "scenario": scenario if session.execution_mode == ExecutionMode.DEMO else None,
+        "execution_mode": session.execution_mode,
+    }
 
 
 @router.post("/{session_id}/pause")
@@ -133,7 +149,7 @@ async def create_checkpoint(session_id: str, label: str = "manual"):
     mem_ids = await mem_svc.snapshot_ids(session_id)
     snap_ref = ""
     if session.sandbox_id:
-        snap_ref = await sandbox_svc.snapshot(session.sandbox_id)
+        snap_ref = await sandbox_svc.snapshot(session.sandbox_id, session.sandbox_profile)
     event_count = await event_svc.get_event_count(session_id)
 
     return await cp_svc.create(
@@ -177,7 +193,7 @@ async def get_sandbox_info(session_id: str):
     if not session or not session.sandbox_id:
         return {"sandbox_id": None, "files": []}
     svc = await get_sandbox_svc()
-    files = await svc.list_files(session.sandbox_id)
+    files = await svc.list_files(session.sandbox_id, session.sandbox_profile)
     return {"sandbox_id": session.sandbox_id, "files": [f.model_dump() for f in files]}
 
 
@@ -188,7 +204,12 @@ async def sandbox_exec(session_id: str, body: dict):
     if not session or not session.sandbox_id:
         raise HTTPException(400, "No sandbox for session")
     svc = await get_sandbox_svc()
-    result = await svc.execute(session.sandbox_id, body.get("command", "echo hello"))
+    result = await svc.execute(
+        session.sandbox_id,
+        body.get("command", "echo hello"),
+        profile=session.sandbox_profile,
+        working_dir=body.get("working_dir"),
+    )
     return result.model_dump()
 
 
@@ -199,14 +220,91 @@ async def sandbox_files(session_id: str):
     if not session or not session.sandbox_id:
         return []
     svc = await get_sandbox_svc()
-    files = await svc.list_files(session.sandbox_id)
+    files = await svc.list_files(session.sandbox_id, session.sandbox_profile)
     return [f.model_dump() for f in files]
+
+
+# ─── Artifacts ─────────────────────────────────────────────────
+
+@router.get("/{session_id}/artifacts")
+async def get_artifacts(session_id: str):
+    svc = await get_artifact_svc()
+    return await svc.list_by_session(session_id)
 
 
 # ─── Safety Alerts ─────────────────────────────────────────────
 
 @router.get("/{session_id}/alerts")
 async def get_alerts(session_id: str):
-    from app.api.deps import get_safety_svc
     svc = await get_safety_svc()
     return await svc.list_alerts(session_id)
+
+
+# ─── Approvals ─────────────────────────────────────────────────
+
+@router.get("/{session_id}/approvals")
+async def get_approvals(session_id: str):
+    svc = await get_approval_svc()
+    return await svc.list_by_session(session_id)
+
+
+@router.get("/{session_id}/approvals/pending")
+async def get_pending_approval(session_id: str):
+    svc = await get_approval_svc()
+    gate = await svc.get_pending(session_id)
+    if not gate:
+        return {"status": "none"}
+    return gate
+
+
+@router.post("/{session_id}/approvals/{gate_id}/approve")
+async def approve_action(session_id: str, gate_id: str):
+    svc = await get_approval_svc()
+    gate = await svc.approve(session_id, gate_id)
+    if not gate:
+        raise HTTPException(404, "Approval gate not found")
+    return gate
+
+
+@router.post("/{session_id}/approvals/{gate_id}/deny")
+async def deny_action(session_id: str, gate_id: str):
+    svc = await get_approval_svc()
+    gate = await svc.deny(session_id, gate_id)
+    if not gate:
+        raise HTTPException(404, "Approval gate not found")
+    return gate
+
+
+# ─── Branches ──────────────────────────────────────────────────
+
+@router.get("/{session_id}/branches")
+async def get_branches(session_id: str):
+    svc = await get_branch_svc()
+    return await svc.list_by_session(session_id)
+
+
+@router.get("/{session_id}/branches/compare")
+async def compare_branches(session_id: str):
+    svc = await get_branch_svc()
+    return await svc.compare(session_id)
+
+
+# ─── Postmortem ────────────────────────────────────────────────
+
+@router.get("/{session_id}/postmortem")
+async def get_postmortem(session_id: str):
+    svc = await get_postmortem_svc()
+    pm = await svc.get(session_id)
+    if not pm:
+        raise HTTPException(404, "Postmortem not generated yet")
+    return pm
+
+
+@router.post("/{session_id}/postmortem/generate")
+async def generate_postmortem(session_id: str):
+    session_svc = await get_session_svc()
+    session = await session_svc.get(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    svc = await get_postmortem_svc()
+    return await svc.generate(session)

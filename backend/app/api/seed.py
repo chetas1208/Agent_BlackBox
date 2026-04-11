@@ -41,26 +41,26 @@ DEMO_SCENARIOS = [
 ]
 
 
+async def _run_demo(demo: dict) -> dict:
+    scenario = demo["scenario"]
+    req_data = {k: v for k, v in demo.items() if k != "scenario"}
+    session_svc = await get_session_svc()
+    runtime = await get_agent_runtime()
+
+    req = CreateSessionRequest(**req_data)
+    session = await session_svc.create(req)
+    session = await session_svc.start(session.id)
+    start_agent_task(runtime, session, scenario)
+    return {"session_id": session.id, "title": session.title, "scenario": scenario}
+
+
 @router.post("")
 async def seed_all():
     """Create and run all demo scenarios."""
-    session_svc = await get_session_svc()
-    runtime = await get_agent_runtime()
     results = []
-
     for demo in DEMO_SCENARIOS:
-        scenario = demo.pop("scenario")
-        req = CreateSessionRequest(**demo)
-        session = await session_svc.create(req)
-        session = await session_svc.start(session.id)
-        start_agent_task(runtime, session, scenario)
-        results.append({
-            "session_id": session.id,
-            "title": session.title,
-            "scenario": scenario,
-        })
-        demo["scenario"] = scenario  # restore for re-use
-
+        result = await _run_demo(demo)
+        results.append(result)
     return {"seeded": len(results), "sessions": results}
 
 
@@ -70,15 +70,4 @@ async def seed_single(scenario: str):
     demo_map = {d["scenario"]: d for d in DEMO_SCENARIOS}
     if scenario not in demo_map:
         return {"error": f"Unknown scenario: {scenario}", "available": list(demo_map.keys())}
-
-    demo = dict(demo_map[scenario])
-    scenario_name = demo.pop("scenario")
-    session_svc = await get_session_svc()
-    runtime = await get_agent_runtime()
-
-    req = CreateSessionRequest(**demo)
-    session = await session_svc.create(req)
-    session = await session_svc.start(session.id)
-    start_agent_task(runtime, session, scenario_name)
-
-    return {"session_id": session.id, "title": session.title, "scenario": scenario_name}
+    return await _run_demo(demo_map[scenario])

@@ -5,6 +5,8 @@ from pydantic import BaseModel
 
 class SandboxResult(BaseModel):
     exit_code: int = 0
+    command: str | None = None
+    status: str | None = None
     stdout: str = ""
     stderr: str = ""
     duration_ms: int = 0
@@ -22,7 +24,13 @@ class SandboxAdapter(ABC):
         ...
 
     @abstractmethod
-    async def execute_command(self, sandbox_id: str, command: str) -> SandboxResult:
+    async def execute_command(
+        self,
+        sandbox_id: str,
+        command: str,
+        working_dir: str | None = None,
+        timeout_ms: int | None = None,
+    ) -> SandboxResult:
         ...
 
     @abstractmethod

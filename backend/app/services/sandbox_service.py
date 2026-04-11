@@ -9,35 +9,54 @@ def get_sandbox_adapter(profile: str = "local_mock") -> SandboxAdapter:
     if profile not in _adapters:
         if profile == "local_mock":
             _adapters[profile] = LocalMockSandbox()
+        elif profile == "blaxel":
+            from app.sandbox.blaxel_adapter import BlaxelSandboxAdapter
+            _adapters[profile] = BlaxelSandboxAdapter()
         else:
             _adapters[profile] = LocalMockSandbox()
     return _adapters[profile]
 
 
 class SandboxService:
-    def __init__(self, adapter: SandboxAdapter | None = None):
-        self.adapter = adapter or get_sandbox_adapter()
+    def __init__(self, adapter: SandboxAdapter | None = None, default_profile: str = "local_mock"):
+        self.adapter = adapter
+        self.default_profile = default_profile
 
-    async def create(self, sandbox_id: str) -> str:
-        return await self.adapter.create(sandbox_id)
+    def _adapter(self, profile: str | None = None) -> SandboxAdapter:
+        return self.adapter or get_sandbox_adapter(profile or self.default_profile)
 
-    async def execute(self, sandbox_id: str, command: str) -> SandboxResult:
-        return await self.adapter.execute_command(sandbox_id, command)
+    async def create(self, sandbox_id: str, profile: str | None = None) -> str:
+        return await self._adapter(profile).create(sandbox_id)
 
-    async def read_file(self, sandbox_id: str, path: str) -> str:
-        return await self.adapter.read_file(sandbox_id, path)
+    async def execute(
+        self,
+        sandbox_id: str,
+        command: str,
+        profile: str | None = None,
+        working_dir: str | None = None,
+        timeout_ms: int | None = None,
+    ) -> SandboxResult:
+        return await self._adapter(profile).execute_command(
+            sandbox_id,
+            command,
+            working_dir=working_dir,
+            timeout_ms=timeout_ms,
+        )
 
-    async def write_file(self, sandbox_id: str, path: str, content: str) -> None:
-        await self.adapter.write_file(sandbox_id, path, content)
+    async def read_file(self, sandbox_id: str, path: str, profile: str | None = None) -> str:
+        return await self._adapter(profile).read_file(sandbox_id, path)
 
-    async def snapshot(self, sandbox_id: str) -> str:
-        return await self.adapter.snapshot(sandbox_id)
+    async def write_file(self, sandbox_id: str, path: str, content: str, profile: str | None = None) -> None:
+        await self._adapter(profile).write_file(sandbox_id, path, content)
 
-    async def restore(self, sandbox_id: str, snapshot_ref: str) -> None:
-        await self.adapter.restore(sandbox_id, snapshot_ref)
+    async def snapshot(self, sandbox_id: str, profile: str | None = None) -> str:
+        return await self._adapter(profile).snapshot(sandbox_id)
 
-    async def list_files(self, sandbox_id: str) -> list[SandboxFileInfo]:
-        return await self.adapter.list_files(sandbox_id)
+    async def restore(self, sandbox_id: str, snapshot_ref: str, profile: str | None = None) -> None:
+        await self._adapter(profile).restore(sandbox_id, snapshot_ref)
 
-    async def destroy(self, sandbox_id: str) -> None:
-        await self.adapter.destroy(sandbox_id)
+    async def list_files(self, sandbox_id: str, profile: str | None = None) -> list[SandboxFileInfo]:
+        return await self._adapter(profile).list_files(sandbox_id)
+
+    async def destroy(self, sandbox_id: str, profile: str | None = None) -> None:
+        await self._adapter(profile).destroy(sandbox_id)

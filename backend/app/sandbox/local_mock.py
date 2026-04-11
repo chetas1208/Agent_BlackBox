@@ -45,10 +45,16 @@ class LocalMockSandbox(SandboxAdapter):
         }
         return sandbox_id
 
-    async def execute_command(self, sandbox_id: str, command: str) -> SandboxResult:
+    async def execute_command(
+        self,
+        sandbox_id: str,
+        command: str,
+        working_dir: str | None = None,
+        timeout_ms: int | None = None,
+    ) -> SandboxResult:
         sb = self._sandboxes.get(sandbox_id)
         if not sb:
-            return SandboxResult(exit_code=1, stderr="Sandbox not found")
+            return SandboxResult(exit_code=1, stderr="Sandbox not found", command=command, status="failed")
 
         await asyncio.sleep(random.uniform(0.1, 0.4))
 
@@ -56,6 +62,8 @@ class LocalMockSandbox(SandboxAdapter):
             if pattern in command:
                 return SandboxResult(
                     exit_code=code,
+                    command=command,
+                    status="completed" if code == 0 else "failed",
                     stdout=stdout,
                     stderr=stderr,
                     duration_ms=random.randint(50, 2000),
@@ -63,6 +71,8 @@ class LocalMockSandbox(SandboxAdapter):
 
         return SandboxResult(
             exit_code=0,
+            command=command,
+            status="completed",
             stdout=f"[mock] executed: {command}",
             duration_ms=random.randint(10, 500),
         )

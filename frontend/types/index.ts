@@ -20,6 +20,13 @@ export interface Session {
   auto_checkpoint: boolean
   safety_policy: string
   memory_strategy: string
+  execution_mode: string
+  current_branch_id: string | null
+  repo_url: string | null
+  repo_ref: string | null
+  pending_approval_id: string | null
+  total_branches: number
+  has_postmortem: boolean
   started_at: string | null
   ended_at: string | null
   created_at: string
@@ -101,6 +108,71 @@ export interface SafetyAlert {
   created_at: string
 }
 
+export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired' | 'auto_approved'
+
+export interface ApprovalGate {
+  id: string
+  session_id: string
+  action_type: string
+  action_summary: string
+  rationale: string
+  evidence: string[]
+  risk_level: string
+  risk_score: number
+  status: ApprovalStatus
+  resolved_by: string | null
+  resolved_at: string | null
+  created_at: string
+  expires_at: string | null
+}
+
+export type BranchStatus = 'running' | 'completed' | 'failed' | 'selected' | 'discarded'
+
+export interface RecoveryBranch {
+  id: string
+  session_id: string
+  parent_checkpoint_id: string
+  strategy: string
+  description: string
+  sandbox_id: string | null
+  status: BranchStatus
+  event_count: number
+  risk_score: number
+  confidence_score: number
+  outcome: string | null
+  is_winner: boolean
+  created_at: string
+  completed_at: string | null
+}
+
+export interface PostmortemSection {
+  title: string
+  content: string
+  severity: string
+}
+
+export interface Postmortem {
+  id: string
+  session_id: string
+  mission_summary: string
+  final_outcome: string
+  root_cause: string
+  key_events: Array<{ type: string; summary: string; severity: string }>
+  memories_involved: Array<{ key: string; layer: string; status: string; confidence: number }>
+  quarantined_memories: string[]
+  failure_points: string[]
+  recovery_actions: string[]
+  branches_used: Array<{ id: string; strategy: string; status: string; is_winner: boolean }>
+  winning_branch: string | null
+  policy_recommendations: string[]
+  total_events: number
+  total_checkpoints: number
+  total_recovery_attempts: number
+  duration_seconds: number
+  sections: PostmortemSection[]
+  created_at: string
+}
+
 export interface DashboardData {
   summary: {
     total: number
@@ -118,4 +190,18 @@ export interface SandboxFile {
   path: string
   content: string
   size: number
+}
+
+export interface BranchComparison {
+  total_branches: number
+  branches: Array<{
+    id: string
+    strategy: string
+    status: string
+    outcome: string | null
+    confidence: number
+    is_winner: boolean
+    event_count: number
+  }>
+  winner: string | null
 }

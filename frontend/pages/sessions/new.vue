@@ -21,6 +21,30 @@
         <input v-model="form.goal" class="input-field" placeholder="e.g. Fix failing test and verify all tests pass" />
       </div>
 
+      <!-- Repo input -->
+      <div class="space-y-3 rounded-2xl border border-surface-800 bg-surface-950/60 p-4">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-sm font-medium text-surface-300">Repository</span>
+          <span class="text-[10px] text-surface-600 bg-surface-800 px-1.5 py-0.5 rounded">cloned into sandbox</span>
+        </div>
+        <div>
+          <label class="block text-xs text-surface-500 mb-1">Repository URL</label>
+          <input
+            v-model="form.repo_url"
+            class="input-field"
+            placeholder="https://github.com/owner/repo.git"
+          />
+        </div>
+        <div>
+          <label class="block text-xs text-surface-500 mb-1">Branch / Ref</label>
+          <input
+            v-model="form.repo_ref"
+            class="input-field"
+            placeholder="main (default)"
+          />
+        </div>
+      </div>
+
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-surface-300 mb-1.5">Task Type</label>
@@ -88,6 +112,8 @@ const form = reactive({
   description: '',
   goal: '',
   task_type: 'debug',
+  repo_url: '',
+  repo_ref: '',
   auto_checkpoint: true,
   safety_policy: 'standard',
   memory_strategy: 'default',
@@ -100,7 +126,12 @@ async function submit() {
   if (!form.title.trim()) return
   submitting.value = true
   try {
-    const session = await api.createSession(form)
+    const payload: Record<string, any> = { ...form }
+    // Only send repo fields if filled in
+    if (!payload.repo_url?.trim()) delete payload.repo_url
+    if (!payload.repo_ref?.trim()) delete payload.repo_ref
+
+    const session = await api.createSession(payload)
     await api.startSession(session.id, scenario.value)
     navigateTo(`/sessions/${session.id}`)
   } catch (e) {

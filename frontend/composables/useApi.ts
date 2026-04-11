@@ -1,4 +1,8 @@
-import type { Session, AgentEvent, MemoryItem, Checkpoint, DashboardData, SafetyAlert, SandboxFile } from '~/types'
+import type {
+  Session, AgentEvent, MemoryItem, Checkpoint, DashboardData,
+  SafetyAlert, SandboxFile, ApprovalGate, RecoveryBranch,
+  Postmortem, BranchComparison,
+} from '~/types'
 
 export function useApi() {
   const config = useRuntimeConfig()
@@ -16,24 +20,19 @@ export function useApi() {
   }
 
   return {
-    // Dashboard
     getDashboard: () => request<DashboardData>('/api/dashboard'),
 
-    // Sessions
     getSessions: () => request<Session[]>('/api/sessions'),
     getSession: (id: string) => request<Session>(`/api/sessions/${id}`),
-    getSessionSummary: () => request<any>('/api/sessions/summary'),
     createSession: (data: any) => request<Session>('/api/sessions', { method: 'POST', body: JSON.stringify(data) }),
     startSession: (id: string, scenario = 'healthy') => request<any>(`/api/sessions/${id}/start?scenario=${scenario}`, { method: 'POST' }),
     pauseSession: (id: string) => request<Session>(`/api/sessions/${id}/pause`, { method: 'POST' }),
     resumeSession: (id: string) => request<Session>(`/api/sessions/${id}/resume`, { method: 'POST' }),
     cancelSession: (id: string) => request<Session>(`/api/sessions/${id}/cancel`, { method: 'POST' }),
 
-    // Events
     getEvents: (sessionId: string) => request<AgentEvent[]>(`/api/sessions/${sessionId}/events`),
     getEventStreamUrl: (sessionId: string) => `${base}/api/sessions/${sessionId}/events/stream`,
 
-    // Memory
     getMemory: (sessionId: string, layer?: string, status?: string) => {
       const params = new URLSearchParams()
       if (layer) params.set('layer', layer)
@@ -46,23 +45,32 @@ export function useApi() {
     promoteMemory: (memoryId: string, sessionId: string) =>
       request<MemoryItem>(`/api/memory/${memoryId}/promote?session_id=${sessionId}`, { method: 'POST' }),
 
-    // Checkpoints
     getCheckpoints: (sessionId: string) => request<Checkpoint[]>(`/api/sessions/${sessionId}/checkpoints`),
-    createCheckpoint: (sessionId: string, label = 'manual') =>
-      request<Checkpoint>(`/api/sessions/${sessionId}/checkpoints?label=${label}`, { method: 'POST' }),
     restoreCheckpoint: (sessionId: string, checkpointId: string) =>
       request<any>(`/api/sessions/${sessionId}/restore/${checkpointId}`, { method: 'POST' }),
 
-    // Recovery
     replay: (sessionId: string) => request<any>(`/api/sessions/${sessionId}/replay`, { method: 'POST' }),
     getRecoveryReport: (sessionId: string) => request<any>(`/api/sessions/${sessionId}/recovery-report`),
 
-    // Safety
     getAlerts: (sessionId: string) => request<SafetyAlert[]>(`/api/sessions/${sessionId}/alerts`),
 
-    // Sandbox
     getSandbox: (sessionId: string) => request<{ sandbox_id: string; files: SandboxFile[] }>(`/api/sessions/${sessionId}/sandbox`),
-    getSandboxFiles: (sessionId: string) => request<SandboxFile[]>(`/api/sessions/${sessionId}/sandbox/files`),
+
+    // Approvals
+    getApprovals: (sessionId: string) => request<ApprovalGate[]>(`/api/sessions/${sessionId}/approvals`),
+    getPendingApproval: (sessionId: string) => request<ApprovalGate | { status: string }>(`/api/sessions/${sessionId}/approvals/pending`),
+    approveAction: (sessionId: string, gateId: string) =>
+      request<ApprovalGate>(`/api/sessions/${sessionId}/approvals/${gateId}/approve`, { method: 'POST' }),
+    denyAction: (sessionId: string, gateId: string) =>
+      request<ApprovalGate>(`/api/sessions/${sessionId}/approvals/${gateId}/deny`, { method: 'POST' }),
+
+    // Branches
+    getBranches: (sessionId: string) => request<RecoveryBranch[]>(`/api/sessions/${sessionId}/branches`),
+    compareBranches: (sessionId: string) => request<BranchComparison>(`/api/sessions/${sessionId}/branches/compare`),
+
+    // Postmortem
+    getPostmortem: (sessionId: string) => request<Postmortem>(`/api/sessions/${sessionId}/postmortem`),
+    generatePostmortem: (sessionId: string) => request<Postmortem>(`/api/sessions/${sessionId}/postmortem/generate`, { method: 'POST' }),
 
     // Seed
     seedAll: () => request<any>('/api/seed', { method: 'POST' }),

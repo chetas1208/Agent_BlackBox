@@ -60,9 +60,27 @@ Think of it as **Datadog + Sentry for autonomous agents**, with runtime safety c
 - **Safety Engine** — Retry loop, contradiction, drift, stall, and budget overrun detectors
 - **Checkpointing** — Automatic and manual execution state snapshots
 - **Recovery** — Restore to checkpoint, quarantine bad memory, replay execution
-- **Sandbox Abstraction** — Pluggable execution environment (mock sandbox included)
+- **Hybrid Execution Modes** — Demo mode for the built-in simulator, real mode for Codex + Blaxel orchestration
+- **Sandbox Abstraction** — Pluggable execution environment with `local_mock` and `blaxel` adapters
+- **Artifacts** — Structured run outputs for summaries, diffs, command logs, and file previews
 - **Real-time Streaming** — SSE event stream for live dashboard updates
 - **Demo Scenarios** — 4 built-in scenarios: healthy, retry loop, contradiction, recovery
+
+## Execution Modes
+
+### Demo mode
+
+- Uses the existing simulated `AgentRuntime`
+- Works with only Redis configured
+- Ideal for local UI and safety-engine development
+
+### Real mode
+
+- Uses `RealExecutionOrchestrator`
+- Requires `ABB_REAL_EXECUTION_ENABLED=true`
+- Requires server-side `ABB_OPENAI_API_KEY`, `ABB_BLAXEL_API_KEY`, and `ABB_BL_WORKSPACE`
+- Requires a Git `repo_url` and optional `repo_ref`
+- Enforces repo-host and command guardrails before any sandbox execution
 
 ## Quick Start
 
@@ -79,7 +97,8 @@ docker-compose up --build
 ### Option 2: Local development
 
 **Prerequisites:**
-- Python 3.9+ (3.11+ recommended)
+- Python 3.11+ for real mode
+- Python 3.9+ is sufficient for demo mode
 - Node.js 18+
 - Redis running on localhost:6379
 
@@ -101,6 +120,35 @@ cd frontend
 npm install
 npm run dev
 ```
+
+## Real Mode Setup
+
+Real mode is feature-flagged and intentionally fails fast when the provider stack is not configured.
+
+Required backend env vars:
+
+```bash
+ABB_REAL_EXECUTION_ENABLED=true
+ABB_REDIS_URL=redis://localhost:6379
+ABB_ALLOWED_REPO_HOSTS=["github.com"]
+ABB_OPENAI_API_KEY=...
+ABB_OPENAI_MODEL_PLANNER=gpt-5-mini
+ABB_OPENAI_MODEL_SUMMARY=gpt-5-nano
+ABB_BLAXEL_API_KEY=...
+ABB_BL_WORKSPACE=...
+ABB_BLAXEL_REGION=us-pdx-1
+ABB_BLAXEL_IMAGE=blaxel/base-image:latest
+ABB_BLAXEL_SANDBOX_TTL=3600
+ABB_TASK_MAX_STEPS=5
+ABB_COMMAND_TIMEOUT_MS=60000
+```
+
+Notes:
+
+- Keep provider secrets server-side only. Never expose them to Nuxt runtime config.
+- The credentials pasted into chat should be rotated before production use.
+- Real mode currently supports HTTPS Git repos only, with optional token injection through `ABB_GIT_ACCESS_TOKEN`.
+- If config is incomplete, `POST /api/sessions` with `execution_mode="real"` returns a clear `400` instead of silently falling back to demo behavior.
 
 ### Seed Demo Data
 
@@ -138,6 +186,7 @@ curl -X POST http://localhost:8000/api/seed/recovery
 | POST | `/api/sessions/{id}/pause` | Pause |
 | POST | `/api/sessions/{id}/resume` | Resume |
 | POST | `/api/sessions/{id}/cancel` | Cancel |
+| GET | `/api/sessions/{id}/artifacts` | List structured run artifacts |
 
 ### Events
 | Method | Endpoint | Description |
@@ -197,33 +246,12 @@ agent-black-box/
 
 ## Extending the System
 
-### Plugging in a real LLM
+### Extending the real orchestration flow
 
-Replace the simulated agent steps in `backend/app/workers/agent_runtime.py` with actual LLM calls:
-
-```python
-# In the agent loop, replace simulated steps with:
-response = await openai_client.chat.completions.create(
-    model="gpt-4",
-    messages=[{"role": "system", "content": plan}, ...]
-)
-```
-
-The event recording, safety checks, and recovery flow will work unchanged.
-
-### Plugging in Blaxel or real sandbox
-
-Implement the `SandboxAdapter` interface in `backend/app/sandbox/base.py`:
-
-```python
-class BlaxelSandbox(SandboxAdapter):
-    async def create(self, sandbox_id: str) -> str:
-        # Call Blaxel API to create sandbox
-        ...
-    async def execute_command(self, sandbox_id: str, command: str) -> SandboxResult:
-        # Execute in Blaxel sandbox
-        ...
-```
+- `backend/app/providers/codex_provider.py` owns structured planning, action selection, reflection, and summarization
+- `backend/app/sandbox/blaxel_adapter.py` isolates Blaxel SDK details behind the existing sandbox interface
+- `backend/app/services/real_execution_orchestrator.py` owns the request lifecycle for repo bootstrap, guarded execution, checkpoints, artifacts, and finalization
+- `backend/app/services/redis_ops_service.py` owns ephemeral Redis state such as locks, rate limits, idempotency, run state, and plan caching
 
 ### Adding new safety detectors
 
@@ -244,6 +272,13 @@ cd backend
 pip install -r requirements.txt
 pytest app/tests/ -v
 ```
+
+Current smoke coverage:
+
+- backend imports cleanly with the new real-mode services
+- Nuxt production build succeeds
+- demo-mode session create/start/complete works in a live FastAPI process
+- real-mode session creation fails cleanly when required provider config is missing
 
 ## License
 

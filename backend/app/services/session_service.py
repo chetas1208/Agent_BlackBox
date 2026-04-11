@@ -1,6 +1,13 @@
 from __future__ import annotations
 from datetime import datetime
-from app.models.session import Session, SessionStatus, SessionStage
+from app.models.session import (
+    Session,
+    SessionStatus,
+    SessionStage,
+    ExecutionMode,
+    ProviderStatus,
+    ExecutionPhase,
+)
 from app.schemas.session import CreateSessionRequest, SessionSummary
 from app.repositories.redis_repo import RedisRepository
 
@@ -12,11 +19,18 @@ class SessionService:
         self.repo = repo
 
     async def create(self, req: CreateSessionRequest) -> Session:
+        provider_status = ProviderStatus.READY
         session = Session(
             title=req.title,
             description=req.description,
             goal=req.goal,
             task_type=req.task_type,
+            execution_mode=req.execution_mode,
+            sandbox_profile=req.sandbox_profile or ("blaxel" if req.execution_mode == ExecutionMode.REAL else "local_mock"),
+            repo_url=req.repo_url,
+            repo_ref=req.repo_ref,
+            idempotency_key=req.idempotency_key,
+            provider_status=provider_status,
             auto_checkpoint=req.auto_checkpoint,
             safety_policy=req.safety_policy,
             memory_strategy=req.memory_strategy,
@@ -43,6 +57,9 @@ class SessionService:
             return None
         s.status = SessionStatus.RUNNING
         s.stage = SessionStage.PLANNING
+        s.execution_phase = ExecutionPhase.BOOTSTRAPPING if s.execution_mode == ExecutionMode.REAL else ExecutionPhase.PLANNING
+        s.provider_status = ProviderStatus.RUNNING
+        s.last_error = None
         s.started_at = datetime.utcnow()
         return await self.update(s)
 
@@ -52,6 +69,7 @@ class SessionService:
             return None
         s.status = SessionStatus.PAUSED
         s.stage = SessionStage.IDLE
+        s.execution_phase = ExecutionPhase.IDLE
         return await self.update(s)
 
     async def resume(self, session_id: str) -> Session | None:
@@ -60,6 +78,9 @@ class SessionService:
             return None
         s.status = SessionStatus.RUNNING
         s.stage = SessionStage.EXECUTING
+        s.execution_phase = ExecutionPhase.EXECUTING
+        s.provider_status = ProviderStatus.RUNNING
+        s.last_error = None
         return await self.update(s)
 
     async def cancel(self, session_id: str) -> Session | None:
@@ -68,6 +89,7 @@ class SessionService:
             return None
         s.status = SessionStatus.CANCELLED
         s.stage = SessionStage.IDLE
+        s.execution_phase = ExecutionPhase.DONE
         s.ended_at = datetime.utcnow()
         return await self.update(s)
 

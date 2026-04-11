@@ -13,6 +13,7 @@ async def get_redis() -> redis.Redis:
             settings.redis_url,
             encoding="utf-8",
             decode_responses=True,
+            protocol=2,
         )
     return _pool
 

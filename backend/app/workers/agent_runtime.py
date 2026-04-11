@@ -663,16 +663,33 @@ class AgentRuntime:
         await self.event_svc.emit(session.id, EventType.SESSION_COMPLETED, "Task completed after recovery", EventActor.RECOVERY_ENGINE, payload={"outcome": session.outcome})
 
     async def execute(self, session: Session, scenario: str = "healthy"):
-        """Main entry point: run a scenario for the given session."""
+        """Main entry point.
+
+        If session has a repo_url → use the real LLM agent runtime.
+        Otherwise → run the requested demo scenario.
+        """
         try:
-            runners = {
-                "healthy": self.run_healthy,
-                "retry_loop": self.run_retry_loop,
-                "contradiction": self.run_contradiction,
-                "recovery": self.run_recovery_success,
-            }
-            runner = runners.get(scenario, self.run_healthy)
-            await runner(session)
+            if session.repo_url:
+                from app.workers.llm_runtime import LLMAgentRuntime
+                llm = LLMAgentRuntime(
+                    session_svc=self.session_svc,
+                    event_svc=self.event_svc,
+                    memory_svc=self.memory_svc,
+                    checkpoint_svc=self.checkpoint_svc,
+                    sandbox_svc=self.sandbox_svc,
+                    safety_svc=self.safety_svc,
+                    recovery_svc=self.recovery_svc,
+                )
+                await llm.run(session)
+            else:
+                runners = {
+                    "healthy": self.run_healthy,
+                    "retry_loop": self.run_retry_loop,
+                    "contradiction": self.run_contradiction,
+                    "recovery": self.run_recovery_success,
+                }
+                runner = runners.get(scenario, self.run_healthy)
+                await runner(session)
         except asyncio.CancelledError:
             session.status = SessionStatus.CANCELLED
             session.ended_at = datetime.utcnow()

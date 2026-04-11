@@ -43,6 +43,8 @@ class Session(BaseModel):
     status: SessionStatus = SessionStatus.PENDING
     stage: SessionStage = SessionStage.IDLE
     sandbox_id: str | None = None
+    repo_url: str | None = None
+    branch: str = "main"
     risk_score: float = 0.0
     confidence_score: float = 1.0
     progress_percent: int = 0

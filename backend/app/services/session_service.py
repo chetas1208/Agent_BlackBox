@@ -17,6 +17,8 @@ class SessionService:
             description=req.description,
             goal=req.goal,
             task_type=req.task_type,
+            repo_url=req.repo_url,
+            branch=req.branch,
             auto_checkpoint=req.auto_checkpoint,
             safety_policy=req.safety_policy,
             memory_strategy=req.memory_strategy,

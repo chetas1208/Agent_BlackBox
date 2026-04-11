@@ -9,6 +9,8 @@ class CreateSessionRequest(BaseModel):
     goal: str = ""
     task_type: TaskType = TaskType.CUSTOM
     sandbox_profile: str = "local_mock"
+    repo_url: str | None = None
+    branch: str = "main"
     auto_checkpoint: bool = True
     safety_policy: str = "standard"
     memory_strategy: str = "default"

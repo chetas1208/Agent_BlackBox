@@ -1,17 +1,22 @@
 from __future__ import annotations
+
 from app.sandbox.base import SandboxAdapter, SandboxResult, SandboxFileInfo
 from app.sandbox.local_mock import LocalMockSandbox
+from app.core.config import get_settings
 
 _adapters: dict[str, SandboxAdapter] = {}
 
 
-def get_sandbox_adapter(profile: str = "local_mock") -> SandboxAdapter:
-    if profile not in _adapters:
-        if profile == "local_mock":
-            _adapters[profile] = LocalMockSandbox()
+def get_sandbox_adapter(profile: str | None = None) -> SandboxAdapter:
+    settings = get_settings()
+    resolved = profile or settings.sandbox_profile
+    if resolved not in _adapters:
+        if resolved == "blaxel":
+            from app.sandbox.blaxel_sandbox import BlaxelSandbox
+            _adapters[resolved] = BlaxelSandbox()
         else:
-            _adapters[profile] = LocalMockSandbox()
-    return _adapters[profile]
+            _adapters[resolved] = LocalMockSandbox()
+    return _adapters[resolved]
 
 
 class SandboxService:

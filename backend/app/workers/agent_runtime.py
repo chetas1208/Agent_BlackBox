@@ -662,7 +662,8 @@ class AgentRuntime:
 
         await self.event_svc.emit(session.id, EventType.SESSION_COMPLETED, "Task completed after recovery", EventActor.RECOVERY_ENGINE, payload={"outcome": session.outcome})
 
-    async def execute(self, session: Session, scenario: str = "healthy"):
+    async def execute(self, session: Session, scenario: str = "healthy",
+                      user_id: str | None = None, github_token: str | None = None):
         """Main entry point.
 
         If session has a repo_url → use the real LLM agent runtime.
@@ -679,6 +680,8 @@ class AgentRuntime:
                     sandbox_svc=self.sandbox_svc,
                     safety_svc=self.safety_svc,
                     recovery_svc=self.recovery_svc,
+                    user_id=user_id,
+                    github_token=github_token,
                 )
                 await llm.run(session)
             else:
@@ -707,9 +710,10 @@ class AgentRuntime:
             )
 
 
-def start_agent_task(runtime: AgentRuntime, session: Session, scenario: str = "healthy"):
+def start_agent_task(runtime: AgentRuntime, session: Session, scenario: str = "healthy",
+                     user_id: str | None = None, github_token: str | None = None):
     """Launch agent execution as a background asyncio task."""
-    task = asyncio.create_task(runtime.execute(session, scenario))
+    task = asyncio.create_task(runtime.execute(session, scenario, user_id=user_id, github_token=github_token))
     _running_tasks[session.id] = task
     return task
 

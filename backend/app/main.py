@@ -10,6 +10,7 @@ from app.api.memory import router as memory_router
 from app.api.dashboard import router as dashboard_router
 from app.api.events_stream import router as events_stream_router
 from app.api.seed import router as seed_router
+from app.api.auth import router as auth_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.include_router(auth_router)
     app.include_router(sessions_router)
     app.include_router(memory_router)
     app.include_router(dashboard_router)

@@ -1,10 +1,12 @@
 from __future__ import annotations
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.api.deps import (
     get_session_svc, get_event_svc, get_checkpoint_svc,
     get_memory_svc, get_recovery_svc, get_agent_runtime,
-    get_sandbox_svc,
+    get_sandbox_svc, get_repo,
 )
+from app.api.auth import get_current_user_id_optional
 from app.schemas.session import CreateSessionRequest
 from app.models.session import Session
 from app.workers.agent_runtime import start_agent_task, cancel_agent_task
@@ -40,13 +42,28 @@ async def get_session(session_id: str):
 
 
 @router.post("/{session_id}/start")
-async def start_session(session_id: str, scenario: str = Query("healthy")):
+async def start_session(
+    session_id: str,
+    scenario: str = Query("healthy"),
+    user_id: str | None = Depends(get_current_user_id_optional),
+    repo=Depends(get_repo),
+):
     svc = await get_session_svc()
     session = await svc.start(session_id)
     if not session:
         raise HTTPException(404, "Session not found")
+
+    # Get github token if user is logged in
+    github_token = None
+    if user_id:
+        from app.services.auth_service import AuthService
+        auth_svc = AuthService(repo)
+        user = await auth_svc.get_user(user_id)
+        if user:
+            github_token = user.github_token
+
     runtime = await get_agent_runtime()
-    start_agent_task(runtime, session, scenario)
+    start_agent_task(runtime, session, scenario, user_id=user_id, github_token=github_token)
     return {"status": "started", "session_id": session_id, "scenario": scenario}
 
 

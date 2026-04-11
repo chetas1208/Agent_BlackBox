@@ -99,22 +99,27 @@
         <!-- Timeline -->
         <div v-if="activeTab === 'timeline'" class="relative">
           <div v-if="!events.length" class="card p-8 text-center text-surface-500">
-            Waiting for events...
-            <div v-if="isStreaming" class="mt-2">
+            <div class="text-3xl mb-3">⏳</div>
+            <p>Waiting for events...</p>
+            <div v-if="isStreaming" class="mt-3">
               <div class="w-4 h-4 border-2 border-accent-500 border-t-transparent rounded-full animate-spin mx-auto" />
             </div>
           </div>
           <div v-else>
             <div class="flex items-center justify-between mb-4">
-              <span class="text-sm text-surface-500">{{ events.length }} events</span>
+              <div class="flex items-center gap-3">
+                <span class="text-sm text-surface-400 font-medium">{{ events.length }} events</span>
+                <span v-if="events.length > 100" class="text-xs text-surface-600">showing latest 100</span>
+              </div>
               <div class="flex items-center gap-2">
                 <span v-if="isStreaming" class="badge badge-info border text-xs">
                   <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse mr-1.5" />
                   Live
                 </span>
+                <span class="text-xs text-surface-600">Click any event to expand details</span>
               </div>
             </div>
-            <div ref="timelineRef">
+            <div ref="timelineRef" class="space-y-0">
               <TimelineEvent
                 v-for="evt in displayEvents"
                 :key="evt.id"
@@ -165,10 +170,18 @@
 
         <!-- Sandbox -->
         <div v-if="activeTab === 'sandbox'">
-          <div v-if="!sandboxFiles.length" class="card p-8 text-center text-surface-500">
-            No sandbox data available.
+          <!-- Sandbox info bar -->
+          <div v-if="session.sandbox_id" class="flex items-center gap-3 mb-4 p-3 card-sm">
+            <span class="text-xs text-surface-500">Sandbox ID:</span>
+            <code class="text-xs font-mono text-accent-400">{{ session.sandbox_id }}</code>
+            <span :class="['badge border text-[10px]', sandboxFiles.length ? 'badge-success' : 'badge-neutral']">
+              {{ sandboxFiles.length ? 'Files loaded' : 'Idle / auto-paused' }}
+            </span>
           </div>
-          <div v-else class="space-y-3">
+
+          <!-- Live files (if sandbox is still warm) -->
+          <div v-if="sandboxFiles.length" class="space-y-3 mb-6">
+            <h3 class="text-xs font-semibold text-surface-500 uppercase tracking-wider">Live Sandbox Files</h3>
             <div v-for="file in sandboxFiles" :key="file.path" class="card-sm p-4">
               <div class="flex items-center justify-between mb-2">
                 <span class="text-sm font-mono text-accent-400">{{ file.path }}</span>
@@ -176,6 +189,42 @@
               </div>
               <pre class="text-xs font-mono text-surface-400 bg-surface-950 rounded-lg p-3 overflow-x-auto max-h-40">{{ file.content }}</pre>
             </div>
+          </div>
+
+          <!-- Memory-based file activity (always available from Redis) -->
+          <div v-if="sandboxMemoryItems.length" class="space-y-3">
+            <h3 class="text-xs font-semibold text-surface-500 uppercase tracking-wider mb-2">
+              File Activity (from session memory)
+            </h3>
+            <div
+              v-for="item in sandboxMemoryItems"
+              :key="item.id"
+              class="card-sm p-4"
+            >
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2">
+                  <span :class="['badge border text-[10px]', item.value?.action === 'write' ? 'badge-warning' : 'badge-info']">
+                    {{ item.value?.action || 'read' }}
+                  </span>
+                  <span class="text-sm font-mono text-accent-400">{{ item.value?.path || item.key }}</span>
+                </div>
+                <span class="text-xs text-surface-600">{{ item.value?.bytes || item.value?.size || 0 }} bytes</span>
+              </div>
+              <div v-if="item.value?.preview" class="mt-2">
+                <pre class="text-xs font-mono text-surface-400 bg-surface-950 rounded-lg p-3 overflow-x-auto max-h-40 whitespace-pre-wrap">{{ item.value.preview }}</pre>
+              </div>
+              <!-- Command output for cmd memory -->
+              <div v-if="item.value?.cmd" class="mt-2 space-y-1">
+                <pre class="text-xs font-mono text-emerald-400 bg-surface-950 rounded px-2 py-1">$ {{ item.value.cmd }}</pre>
+                <pre v-if="item.value?.out" class="text-xs font-mono text-surface-400 bg-surface-950 rounded-lg p-2 overflow-x-auto max-h-32 whitespace-pre-wrap">{{ item.value.out }}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="!sandboxFiles.length && !sandboxMemoryItems.length" class="card p-8 text-center text-surface-500">
+            <div class="text-3xl mb-3">📦</div>
+            <p class="font-medium mb-1">Sandbox is idle</p>
+            <p class="text-sm text-surface-600">The sandbox auto-pauses after the session completes. File activity will appear here during active sessions.</p>
           </div>
         </div>
 
@@ -404,11 +453,19 @@ const memoryLayers = [
   { value: 'risk_memory', label: 'Risk', activeClass: 'bg-red-500/20 text-red-400 border-red-500/30' },
 ]
 
-const displayEvents = computed(() => [...events.value].reverse().slice(0, 200))
+// Show most recent 100 events, newest at top
+const displayEvents = computed(() => [...events.value].slice(-100).reverse())
 
 const filteredMemory = computed(() => {
   if (!memoryFilter.value) return memory.value
   return memory.value.filter(m => m.layer === memoryFilter.value)
+})
+
+// Sandbox tab: show file reads/writes and commands from memory
+const sandboxMemoryItems = computed(() => {
+  return memory.value.filter(m =>
+    m.tags?.includes('file') || m.tags?.includes('command') || m.tags?.includes('read') || m.tags?.includes('write')
+  ).slice(0, 30)
 })
 
 // Simple markdown → HTML renderer (no external lib needed)

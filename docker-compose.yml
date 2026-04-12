@@ -1,7 +1,4 @@
-version: "3.9"
-
 services:
-  # ── Redis (skip if using Redis Cloud — set ABB_REDIS_URL in .env) ──
   redis:
     image: redis:7-alpine
     ports:
@@ -14,10 +11,9 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
-    profiles: ["local-redis"]   # only starts with: docker compose --profile local-redis up
 
-  # ── Backend ────────────────────────────────────────────────────────
   backend:
+    image: agent-blackbox-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -26,8 +22,11 @@ services:
     env_file:
       - .env
     environment:
-      # These can be overridden in .env
+      - ABB_REDIS_URL=redis://redis:6379
       - ABB_CORS_ORIGINS=["http://localhost:3000","http://frontend:3000"]
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
@@ -36,8 +35,8 @@ services:
       retries: 5
       start_period: 15s
 
-  # ── Frontend ───────────────────────────────────────────────────────
   frontend:
+    image: agent-blackbox-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile

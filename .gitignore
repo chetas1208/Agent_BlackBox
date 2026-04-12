@@ -26,3 +26,6 @@ dump.rdb
 
 # pytest
 .pytest_cache/
+
+# Docker export
+agent-blackbox.tar.gz

@@ -63,6 +63,36 @@ class AuthService:
     async def get_user(self, user_id: str) -> User | None:
         return await self.repo.get_model(NS, user_id, User)
 
+    async def create_reset_token(self, email: str) -> str | None:
+        """Generate a password reset token valid for 1 hour. Returns token or None if email not found."""
+        user_id = await self.repo.r.get(f"abb:{NS_EMAIL}:{email}")
+        if not user_id:
+            return None
+        if isinstance(user_id, bytes):
+            user_id = user_id.decode()
+        import secrets
+        token = secrets.token_urlsafe(32)
+        # Store token → user_id with 1 hour TTL
+        await self.repo.r.set(f"abb:reset:{token}", user_id, ex=3600)
+        return token
+
+    async def reset_password(self, token: str, new_password: str) -> bool:
+        """Validate reset token and update password. Returns True on success."""
+        user_id = await self.repo.r.get(f"abb:reset:{token}")
+        if not user_id:
+            return False
+        if isinstance(user_id, bytes):
+            user_id = user_id.decode()
+        user = await self.get_user(user_id)
+        if not user:
+            return False
+        user.hashed_password = self.hash_password(new_password)
+        user.updated_at = datetime.utcnow()
+        await self.repo.save_model(NS, user.id, user)
+        # Invalidate token after use
+        await self.repo.r.delete(f"abb:reset:{token}")
+        return True
+
     async def update_github_token(self, user_id: str, token: str, username: str) -> User | None:
         user = await self.get_user(user_id)
         if not user:

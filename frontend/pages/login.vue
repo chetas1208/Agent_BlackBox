@@ -13,7 +13,12 @@
           <input v-model="form.email" type="email" class="input-field" placeholder="you@company.com" @keyup.enter="submit" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-surface-300 mb-1.5">Password</label>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-sm font-medium text-surface-300">Password</label>
+            <NuxtLink to="/forgot-password" class="text-xs text-accent-400 hover:text-accent-300">
+              Forgot password?
+            </NuxtLink>
+          </div>
           <input v-model="form.password" type="password" class="input-field" placeholder="••••••••" @keyup.enter="submit" />
         </div>
 

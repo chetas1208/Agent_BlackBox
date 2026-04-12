@@ -95,6 +95,41 @@ async def me(
             "github_username": user.github_username}
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+@router.post("/forgot-password")
+async def forgot_password(req: ForgotPasswordRequest, repo: RedisRepository = Depends(get_repo)):
+    """Generate a reset token. In production this would be emailed; here we return it directly."""
+    svc = _svc(repo)
+    token = await svc.create_reset_token(req.email)
+    if not token:
+        # Don't reveal whether email exists — but for hackathon UX, we do
+        raise HTTPException(status_code=404, detail="No account found with that email")
+    return {
+        "message": "Reset token generated",
+        "reset_token": token,   # In production: send via email, don't return here
+        "expires_in": "1 hour",
+    }
+
+
+@router.post("/reset-password")
+async def reset_password(req: ResetPasswordRequest, repo: RedisRepository = Depends(get_repo)):
+    svc = _svc(repo)
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    success = await svc.reset_password(req.token, req.new_password)
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    return {"message": "Password updated successfully"}
+
+
 @router.post("/github-token")
 async def save_github_token(
     req: GitHubTokenRequest,

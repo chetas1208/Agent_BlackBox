@@ -28,29 +28,56 @@
             Seed Demo
           </button>
 
-          <!-- Auth area -->
-          <template v-if="auth.isLoggedIn.value">
-            <NuxtLink
-              to="/settings"
-              class="ml-2 px-3 py-1.5 text-sm font-medium text-surface-400 hover:text-white rounded-lg hover:bg-surface-800 transition-all"
-            >
-              {{ auth.user.value?.name || auth.user.value?.email || 'Account' }}
-            </NuxtLink>
-            <button
-              class="px-3 py-1.5 text-sm font-medium text-surface-500 hover:text-white rounded-lg hover:bg-surface-800 transition-all"
-              @click="auth.logout()"
-            >
-              Sign out
-            </button>
-          </template>
-          <template v-else>
-            <NuxtLink
-              to="/login"
-              class="ml-2 px-3 py-1.5 text-sm font-medium text-accent-400 hover:text-accent-300 rounded-lg hover:bg-surface-800 transition-all"
-            >
-              Sign in
-            </NuxtLink>
-          </template>
+          <!-- Auth: Clerk when configured, fallback otherwise -->
+          <div class="ml-3 flex items-center gap-2">
+            <template v-if="clerkEnabled">
+              <SignedIn>
+                <NuxtLink
+                  to="/settings"
+                  class="px-3 py-1.5 text-sm font-medium text-surface-400 hover:text-white rounded-lg hover:bg-surface-800 transition-all"
+                >
+                  Settings
+                </NuxtLink>
+                <UserButton :after-sign-out-url="'/'" />
+              </SignedIn>
+              <SignedOut>
+                <SignInButton mode="modal">
+                  <button class="px-3 py-1.5 text-sm font-medium text-accent-400 hover:text-accent-300 rounded-lg hover:bg-surface-800 transition-all">
+                    Sign in
+                  </button>
+                </SignInButton>
+                <SignUpButton mode="modal">
+                  <button class="px-3 py-1.5 text-sm font-medium text-surface-400 hover:text-white rounded-lg hover:bg-surface-800 transition-all">
+                    Sign up
+                  </button>
+                </SignUpButton>
+              </SignedOut>
+            </template>
+            <template v-else>
+              <template v-if="customAuth.isLoggedIn.value">
+                <NuxtLink
+                  to="/settings"
+                  class="px-3 py-1.5 text-sm font-medium text-surface-400 hover:text-white rounded-lg hover:bg-surface-800 transition-all"
+                >
+                  {{ customAuth.user.value?.name || 'Settings' }}
+                </NuxtLink>
+                <button
+                  class="px-3 py-1.5 text-sm font-medium text-surface-500 hover:text-white rounded-lg hover:bg-surface-800 transition-all"
+                  @click="customAuth.logout()"
+                >
+                  Sign out
+                </button>
+              </template>
+              <template v-else>
+                <NuxtLink
+                  to="/login"
+                  class="px-3 py-1.5 text-sm font-medium text-accent-400 hover:text-accent-300 rounded-lg hover:bg-surface-800 transition-all"
+                >
+                  Sign in
+                </NuxtLink>
+              </template>
+            </template>
+          </div>
         </nav>
       </div>
     </header>
@@ -65,10 +92,13 @@
 
 <script setup lang="ts">
 const api = useApi()
-const auth = useAuth()
+const customAuth = useCustomAuth()
+const clerkEnabled = useRuntimeConfig().public.clerkEnabled as boolean
 
 onMounted(() => {
-  auth.fetchMe()
+  if (!clerkEnabled) {
+    customAuth.fetchMe()
+  }
 })
 
 async function seedDemo() {

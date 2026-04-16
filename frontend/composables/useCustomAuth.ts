@@ -5,7 +5,7 @@ export interface User {
   github_username: string | null
 }
 
-export function useAuth() {
+export function useCustomAuth() {
   const config = useRuntimeConfig()
   const base = config.public.apiBase
 

@@ -1,3 +1,6 @@
+const clerkKey = process.env.NUXT_PUBLIC_CLERK_PUBLISHABLE_KEY || ''
+const hasClerk = clerkKey.startsWith('pk_')
+
 export default defineNuxtConfig({
   compatibilityDate: '2024-07-01',
   devtools: { enabled: true },
@@ -6,11 +9,13 @@ export default defineNuxtConfig({
     '@nuxtjs/tailwindcss',
     '@pinia/nuxt',
     '@vueuse/nuxt',
+    ...(hasClerk ? ['@clerk/nuxt'] : []),
   ],
 
   runtimeConfig: {
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000',
+      clerkEnabled: hasClerk,
     },
   },
 

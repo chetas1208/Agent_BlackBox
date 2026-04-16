@@ -168,7 +168,7 @@
 
 <script setup lang="ts">
 const api = useApi()
-const auth = useAuth()
+const auth = useCustomAuth()
 
 const mode = ref<'real' | 'demo'>('real')
 const scenario = ref('healthy')

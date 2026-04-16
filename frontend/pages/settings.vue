@@ -40,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-const auth = useAuth()
+const auth = useCustomAuth()
 const ghToken = ref('')
 const ghUsername = ref(auth.user.value?.github_username || '')
 const ghSaving = ref(false)

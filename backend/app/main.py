@@ -1,8 +1,10 @@
 from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from pathlib import Path
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from app.core.config import get_settings
 from app.core.redis import close_redis
 from app.api.sessions import router as sessions_router
@@ -54,6 +56,26 @@ def create_app() -> FastAPI:
     @app.get("/api/health")
     async def health():
         return {"status": "ok", "app": settings.app_name, "version": settings.app_version}
+
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+    EXPORT_PATH = PROJECT_ROOT / "agent-blackbox.tar.gz"
+
+    @app.get("/api/export/status")
+    async def export_status():
+        if EXPORT_PATH.exists():
+            size_mb = round(EXPORT_PATH.stat().st_size / (1024 * 1024), 1)
+            return {"available": True, "size_mb": size_mb, "filename": EXPORT_PATH.name}
+        return {"available": False, "size_mb": 0, "filename": None}
+
+    @app.get("/api/export/download")
+    async def export_download():
+        if not EXPORT_PATH.exists():
+            raise HTTPException(404, "Export not found. Run 'make export' first.")
+        return FileResponse(
+            path=str(EXPORT_PATH),
+            media_type="application/gzip",
+            filename="agent-blackbox.tar.gz",
+        )
 
     return app
 

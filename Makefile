@@ -20,12 +20,15 @@ help:
 	@echo "    make import     Load Docker images from agent-blackbox.tar.gz"
 	@echo ""
 
+# Prefer Node 20+ on PATH (Homebrew: node@20). Avoids Nuxt CLI crash on Node 18 (util.styleText).
+FRONTEND_NODE_PATH ?= /opt/homebrew/opt/node@20/bin:/usr/local/opt/node@20/bin
+
 # ── Development (hot reload) ───────────────────────────────────
 dev:
 	@echo "Starting backend..."
 	cd backend && source venv/bin/activate && uvicorn app.main:app --reload --port 8000 --env-file .env &
-	@echo "Starting frontend..."
-	cd frontend && npm run dev
+	@echo "Starting frontend (Node 20+ on PATH if installed via Homebrew)..."
+	cd frontend && PATH="$(FRONTEND_NODE_PATH):$$PATH" npm run dev
 
 # ── Docker Build ───────────────────────────────────────────────
 build:

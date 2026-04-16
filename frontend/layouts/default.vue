@@ -31,7 +31,7 @@
           <!-- Auth: Clerk when configured, fallback otherwise -->
           <div class="ml-3 flex items-center gap-2">
             <template v-if="clerkEnabled">
-              <SignedIn>
+              <Show when="signed-in">
                 <NuxtLink
                   to="/settings"
                   class="px-3 py-1.5 text-sm font-medium text-surface-400 hover:text-white rounded-lg hover:bg-surface-800 transition-all"
@@ -39,8 +39,8 @@
                   Settings
                 </NuxtLink>
                 <UserButton :after-sign-out-url="'/'" />
-              </SignedIn>
-              <SignedOut>
+              </Show>
+              <Show when="signed-out">
                 <SignInButton mode="modal">
                   <button class="px-3 py-1.5 text-sm font-medium text-accent-400 hover:text-accent-300 rounded-lg hover:bg-surface-800 transition-all">
                     Sign in
@@ -51,7 +51,7 @@
                     Sign up
                   </button>
                 </SignUpButton>
-              </SignedOut>
+              </Show>
             </template>
             <template v-else>
               <template v-if="customAuth.isLoggedIn.value">

@@ -253,7 +253,13 @@ async function submit() {
 
     navigateTo(`/sessions/${session.id}`)
   } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Failed to create session'
+    const msg = e instanceof Error ? e.message : 'Failed to create session'
+    if (msg === 'Failed to fetch') {
+      error.value =
+        'Cannot reach the API. Start the backend (port 8000), e.g. from repo root: cd backend && source venv/bin/activate && uvicorn app.main:app --reload --port 8000 --env-file .env — or run make dev.'
+    } else {
+      error.value = msg
+    }
   } finally {
     submitting.value = false
   }

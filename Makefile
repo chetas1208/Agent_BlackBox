@@ -1,4 +1,4 @@
-.PHONY: help dev build up down logs clean export import
+.PHONY: help dev dev-backend build up down logs clean export import
 
 help:
 	@echo ""
@@ -6,7 +6,8 @@ help:
 	@echo "  ════════════════════════════════════════════"
 	@echo ""
 	@echo "  Development:"
-	@echo "    make dev        Start locally (hot reload, no Docker)"
+	@echo "    make dev          Backend + frontend (needs Redis running)"
+	@echo "    make dev-backend  API only on :8000 (needs Redis)"
 	@echo ""
 	@echo "  Docker:"
 	@echo "    make build      Build Docker images"
@@ -29,6 +30,10 @@ dev:
 	cd backend && source venv/bin/activate && uvicorn app.main:app --reload --port 8000 --env-file .env &
 	@echo "Starting frontend (Node 20+ on PATH if installed via Homebrew)..."
 	cd frontend && PATH="$(FRONTEND_NODE_PATH):$$PATH" npm run dev
+
+dev-backend:
+	@redis-cli ping >/dev/null 2>&1 || (echo "❌ Redis not running. Start it: redis-server (or brew services start redis)" && exit 1)
+	cd backend && source venv/bin/activate && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --env-file .env
 
 # ── Docker Build ───────────────────────────────────────────────
 build:

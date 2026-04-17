@@ -12,7 +12,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
     redis_prefix: str = "abb:"
 
-    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:3001"]
+    cors_origins: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ]
 
     max_events_per_session: int = 10000
     checkpoint_auto_interval: int = 10
